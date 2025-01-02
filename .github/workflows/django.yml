@@ -1,0 +1,110 @@
+name: Django CI/CD with Docker and EC2
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.10'
+
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Step 4: Run Unit Tests
+      - name: Run Unit Tests
+        run: |
+          python manage.py test basic.tests  # Runs the tests in the basic/tests directory
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test  # This job will only run if the test job is successful
+
+    steps:
+      # Step 1: Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Set up Python (if needed for linting or other steps)
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.10'
+
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Step 4: Build Docker Image
+      - name: Build Docker Image
+        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/django-finance:latest .
+
+      # Step 5: Push Docker Image to Docker Hub
+      - name: Log in to Docker Hub
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      - name: Push Docker Image
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/django-finance:latest
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build  # This job will only run if the build job is successful
+
+    steps:
+      # Step 1: Checkout code (same as in build job)
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Deploy to EC2 Instance
+      - name: Deploy to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_KEY: ${{ secrets.EC2_KEY }}
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          # Debugging: Print environment variables
+          echo "EC2_USER: $EC2_USER"
+          echo "EC2_HOST: $EC2_HOST"
+          
+          # Save the private key to a file
+          echo "$EC2_KEY" > private_key.pem
+          chmod 600 private_key.pem
+          
+          # Debugging: Ensure private key file is created
+          ls -l private_key.pem
+          
+          # Copy deployment script to EC2
+          scp -o StrictHostKeyChecking=no -i private_key.pem deploy_django.sh $EC2_USER@$EC2_HOST:/home/$EC2_USER/
+      
+          # Debugging: List files in the EC2 home directory after copying the script
+          ssh -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST "ls -l /home/$EC2_USER"
+      
+          # Run deployment script on EC2 with Docker credentials
+          ssh -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST << EOF
+             echo "Current User: $(whoami)"
+             chmod +x /home/$EC2_USER/deploy_django.sh
+             /home/$EC2_USER/deploy_django.sh $DOCKER_USERNAME $DOCKER_PASSWORD
+           EOF
+          
+          # Clean up the private key file after the deployment
+          rm -f private_key.pem
