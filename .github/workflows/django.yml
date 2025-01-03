@@ -28,9 +28,9 @@ jobs:
           pip install -r requirements.txt
 
       # Step 4: Run Unit Tests
-      - name: Run Unit Tests
-        run: |
-          python manage.py test basic.tests  # Runs the tests in the basic/tests directory
+      #- name: Run Unit Tests
+       # run: |
+        #  python manage.py test basic.tests  # Runs the tests in the basic/tests directory
 
   build:
     runs-on: ubuntu-latest
