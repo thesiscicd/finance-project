@@ -26,4 +26,4 @@ COPY . /app/
 EXPOSE 8000
 
 # Default command to run the project
-CMD ["python", "manage.py", "runserver", "3.0.144.126:8000"]
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
